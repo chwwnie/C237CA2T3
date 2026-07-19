@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <title>Edit <%= pet.name %> - Pet Shelter Portal</title>
+</head>
+<body>
+  <nav class="navbar navbar-expand-sm bg-dark navbar-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/">Pet Shelter Portal</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavbar">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="collapsibleNavbar">
+        <ul class="navbar-nav">
+          <li class="nav-item"><a class="nav-link" href="/pets">Browse Pets</a></li>
+          <li class="nav-item"><a class="nav-link" href="/addPet">Add Pet</a></li>
+          <li class="nav-item"><a class="nav-link" href="/applications">Manage Applications</a></li>
+          <li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
+    <h2 class="text-center mb-4">Edit <%= pet.name %></h2>
+    <form action="/editPet/<%= pet.id %>" method="POST" enctype="multipart/form-data" class="mx-auto" style="max-width: 700px;">
+      <input type="hidden" name="currentImage" value="<%= pet.image || '' %>">
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-control" name="name" value="<%= pet.name %>" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Species</label>
+          <select class="form-select" name="species" required>
+            <% ['Dog','Cat','Rabbit','Bird','Other'].forEach(s => { %>
+              <option value="<%= s %>" <%= pet.species === s ? 'selected' : '' %>><%= s %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Breed</label>
+          <input type="text" class="form-control" name="breed" value="<%= pet.breed %>" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Age (months)</label>
+          <input type="number" class="form-control" name="ageMonths" value="<%= pet.ageMonths %>" min="0" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Age Group</label>
+          <select class="form-select" name="ageGroup" required>
+            <% ['Baby','Young','Adult','Senior'].forEach(a => { %>
+              <option value="<%= a %>" <%= pet.ageGroup === a ? 'selected' : '' %>><%= a %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Gender</label>
+          <select class="form-select" name="gender" required>
+            <% ['Male','Female','Unknown'].forEach(g => { %>
+              <option value="<%= g %>" <%= pet.gender === g ? 'selected' : '' %>><%= g %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Weight (lbs)</label>
+          <input type="number" step="0.1" class="form-control" name="weightLbs" value="<%= pet.weightLbs %>" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Adoption Status</label>
+          <select class="form-select" name="adoptionStatus">
+            <% ['Available','Pending','Adopted','Medical Hold','Archived'].forEach(st => { %>
+              <option value="<%= st %>" <%= pet.adoptionStatus === st ? 'selected' : '' %>><%= st %></option>
+            <% }) %>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Personality</label>
+        <textarea class="form-control" name="personality" rows="2" required><%= pet.personality %></textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" name="description" rows="3" required><%= pet.description %></textarea>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Medical History</label>
+        <textarea class="form-control" name="medicalHistory" rows="2"><%= pet.medicalHistory %></textarea>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Vaccination Status</label>
+          <input type="text" class="form-control" name="vaccinationStatus" value="<%= pet.vaccinationStatus %>">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Rescue Date</label>
+          <input type="date" class="form-control" name="rescueDate" value="<%= pet.rescueDate ? pet.rescueDate.toISOString().split('T')[0] : '' %>">
+        </div>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Shelter Location</label>
+          <input type="text" class="form-control" name="shelterLocation" value="<%= pet.shelterLocation %>">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Kennel Code</label>
+          <input type="text" class="form-control" name="kennelCode" value="<%= pet.kennelCode %>">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Temperament</label>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="friendlyWithKids" <%= pet.friendlyWithKids ? 'checked' : '' %>>
+          <label class="form-check-label">Good with kids</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="friendlyWithDogs" <%= pet.friendlyWithDogs ? 'checked' : '' %>>
+          <label class="form-check-label">Good with dogs</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="friendlyWithCats" <%= pet.friendlyWithCats ? 'checked' : '' %>>
+          <label class="form-check-label">Good with cats</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="friendlyWithOtherPets" <%= pet.friendlyWithOtherPets ? 'checked' : '' %>>
+          <label class="form-check-label">Good with other pets</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="specialNeeds" <%= pet.specialNeeds ? 'checked' : '' %>>
+          <label class="form-check-label">Special needs</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="checkbox" name="healthy" <%= pet.healthy ? 'checked' : '' %>>
+          <label class="form-check-label">Currently healthy</label>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Current Photo</label><br>
+        <img src="/images/<%= pet.image || 'placeholder.png' %>" style="max-height:120px;" class="mb-2"><br>
+        <label class="form-label">Replace Photo (optional)</label>
+        <input class="form-control" type="file" name="image" accept="image/*">
+      </div>
+
+      <div class="d-grid">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
