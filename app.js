@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 const flash = require('connect-flash');
 const multer = require('multer');
 const app = express();
@@ -34,6 +35,21 @@ db.connect((err) => {
     console.log('Connected to database');
 });
 
+// Store sessions as rows in MySQL (table: sessions) instead of the default
+// in-memory store, so logins survive a server restart. express-mysql-session
+// doesn't forward an `ssl` option to its internal pool, and Azure MySQL
+// requires TLS - so we create our own pool (with SSL) and hand it over instead.
+const sessionPool = mysql.createPool({
+    host: 'c237-annie-mysql.mysql.database.azure.com',
+    user: 'c237_030',
+    password: 'c237030@2026!',
+    database: 'c237_030_ca2team3',
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+const sessionStore = new MySQLStore({}, sessionPool);
+
 // View engine and middleware
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
@@ -43,6 +59,7 @@ app.use(session({
     secret: 'secret',
     resave: false,
     saveUninitialized: true,
+    store: sessionStore,
     cookie: { maxAge: 1000 * 60 * 60 * 24 * 7 } // 1 week
 }));
 
@@ -71,12 +88,26 @@ const checkAdmin = (req, res, next) => {
 
 // [Student A] Middleware for registration form validation
 const validateRegistration = (req, res, next) => {
-    const { username, email, password, phone, address } = req.body;
+    // trim so " bob@x.com" and "bob@x.com" aren't treated as different accounts
+    req.body.username = (req.body.username || '').trim();
+    req.body.email = (req.body.email || '').trim().toLowerCase();
+    req.body.phone = (req.body.phone || '').trim();
+    req.body.address = (req.body.address || '').trim();
+
+    const { username, email, password, confirmPassword, phone, address } = req.body;
+
     if (!username || !email || !password || !phone || !address) {
-        return res.status(400).send('All fields are required.');
+        req.flash('error', 'All fields are required.');
+        req.flash('formData', req.body);
+        return res.redirect('/register');
     }
     if (password.length < 6) {
         req.flash('error', 'Password should be at least 6 or more characters long');
+        req.flash('formData', req.body);
+        return res.redirect('/register');
+    }
+    if (password !== confirmPassword) {
+        req.flash('error', 'Passwords do not match.');
         req.flash('formData', req.body);
         return res.redirect('/register');
     }
@@ -102,6 +133,13 @@ app.post('/register', validateRegistration, (req, res) => {
     const sql = 'INSERT INTO users (username, email, password, phone, address, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
     db.query(sql, [username, email, password, phone, address, chosenRole], (err, result) => {
         if (err) {
+            // email is UNIQUE in the schema - handle that case gracefully instead
+            // of crashing the whole server on a duplicate registration attempt
+            if (err.code === 'ER_DUP_ENTRY') {
+                req.flash('error', 'That email is already registered. Try logging in instead.');
+                req.flash('formData', req.body);
+                return res.redirect('/register');
+            }
             throw err;
         }
         req.flash('success', 'Registration successful! Please log in.');
@@ -141,6 +179,70 @@ app.post('/login', (req, res) => {
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
+});
+
+// [Student A] Personalisation feature: users manage their own account info
+app.get('/profile', checkAuthenticated, (req, res) => {
+    res.render('profile', {
+        user: req.session.user,
+        messages: req.flash('success'),
+        errors: req.flash('error')
+    });
+});
+
+app.post('/profile', checkAuthenticated, (req, res) => {
+    const username = (req.body.username || '').trim();
+    const phone = (req.body.phone || '').trim();
+    const address = (req.body.address || '').trim();
+
+    if (!username || !phone || !address) {
+        req.flash('error', 'All fields are required.');
+        return res.redirect('/profile');
+    }
+
+    const sql = 'UPDATE users SET username = ?, phone = ?, address = ? WHERE id = ?';
+    db.query(sql, [username, phone, address, req.session.user.id], (err) => {
+        if (err) throw err;
+        // keep the session in sync so the navbar/welcome text reflects the change immediately
+        req.session.user.username = username;
+        req.session.user.phone = phone;
+        req.session.user.address = address;
+        req.flash('success', 'Profile updated successfully.');
+        res.redirect('/profile');
+    });
+});
+
+app.post('/profile/password', checkAuthenticated, (req, res) => {
+    const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+        req.flash('error', 'All password fields are required.');
+        return res.redirect('/profile');
+    }
+    if (newPassword.length < 6) {
+        req.flash('error', 'New password should be at least 6 or more characters long.');
+        return res.redirect('/profile');
+    }
+    if (newPassword !== confirmNewPassword) {
+        req.flash('error', 'New passwords do not match.');
+        return res.redirect('/profile');
+    }
+
+    // verify current password is correct before allowing the change
+    const checkSql = 'SELECT id FROM users WHERE id = ? AND password = SHA1(?)';
+    db.query(checkSql, [req.session.user.id, currentPassword], (err, results) => {
+        if (err) throw err;
+        if (results.length === 0) {
+            req.flash('error', 'Current password is incorrect.');
+            return res.redirect('/profile');
+        }
+        const updateSql = 'UPDATE users SET password = SHA1(?) WHERE id = ?';
+        db.query(updateSql, [newPassword, req.session.user.id], (err) => {
+            if (err) throw err;
+            req.flash('success', 'Password changed successfully.');
+            res.redirect('/profile');
+        });
+    });
 });
 
 // ==================== STUDENT C: VIEWING / DISPLAYING PETS ====================
