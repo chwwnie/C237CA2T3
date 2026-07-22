@@ -35,6 +35,12 @@ db.connect((err) => {
     console.log('Connected to database');
 });
 
+// Without this, an unexpected network hiccup (e.g. Azure dropping an idle
+// connection) fires an unhandled 'error' event and crashes the entire server.
+db.on('error', (err) => {
+    console.error('Database connection error:', err.message);
+});
+
 // Store sessions as rows in MySQL (table: sessions) instead of the default
 // in-memory store, so logins survive a server restart. express-mysql-session
 // doesn't forward an `ssl` option to its internal pool, and Azure MySQL
@@ -47,6 +53,9 @@ const sessionPool = mysql.createPool({
     ssl: {
         rejectUnauthorized: false
     }
+});
+sessionPool.on('error', (err) => {
+    console.error('Session store pool error:', err.message);
 });
 const sessionStore = new MySQLStore({}, sessionPool);
 
