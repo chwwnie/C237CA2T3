@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <title>Browse Pets - Pet Shelter Portal</title>
 </head>
+
 <body>
   <nav class="navbar navbar-expand-sm bg-dark navbar-dark">
     <div class="container-fluid">
@@ -19,7 +21,7 @@
           <li class="nav-item"><a class="nav-link" href="/pets">Browse Pets</a></li>
           <li class="nav-item"><a class="nav-link" href="/favourites">Favourites</a></li>
           <li class="nav-item"><a class="nav-link" href="/my-applications">My Applications</a></li>
-          <% if (user.role === 'admin') { %>
+          <% if (user.role==='admin' ) { %>
             <li class="nav-item"><a class="nav-link" href="/addPet">Add Pet</a></li>
             <li class="nav-item"><a class="nav-link" href="/applications">Manage Applications</a></li>
           <% } %>
@@ -46,37 +48,41 @@
     <!-- Search / Filter form -->
     <form action="/pets" method="GET" class="row g-2 mb-4">
       <div class="col-md-3">
-        <input type="text" name="q" class="form-control" placeholder="Search by name or breed" value="<%= query.q || '' %>">
+        <input type="text" name="q" class="form-control" placeholder="Search by name or breed"
+          value="<%= query.q || '' %>">
       </div>
       <div class="col-md-2">
         <select name="species" class="form-select">
           <option value="">All Species</option>
-          <% ['Dog','Cat','Rabbit','Bird','Other'].forEach(s => { %>
-            <option value="<%= s %>" <%= query.species === s ? 'selected' : '' %>><%= s %></option>
-          <% }) %>
+          <% ['Dog','Cat','Rabbit','Bird','Other'].forEach(s=> { %>
+            <option value="<%= s %>" <%=query.species===s ? 'selected' : '' %>><%= s %>
+            </option>
+            <% }) %>
         </select>
       </div>
       <div class="col-md-2">
         <select name="ageGroup" class="form-select">
           <option value="">All Ages</option>
-          <% ['Baby','Young','Adult','Senior'].forEach(a => { %>
-            <option value="<%= a %>" <%= query.ageGroup === a ? 'selected' : '' %>><%= a %></option>
-          <% }) %>
+          <% ['Baby','Young','Adult','Senior'].forEach(a=> { %>
+            <option value="<%= a %>" <%=query.ageGroup===a ? 'selected' : '' %>><%= a %>
+            </option>
+            <% }) %>
         </select>
       </div>
       <div class="col-md-2">
         <select name="status" class="form-select">
           <option value="">All Statuses</option>
-          <% ['Available','Pending','Adopted','Medical Hold'].forEach(st => { %>
-            <option value="<%= st %>" <%= query.status === st ? 'selected' : '' %>><%= st %></option>
-          <% }) %>
+          <% ['Available','Pending','Adopted','Medical Hold'].forEach(st=> { %>
+            <option value="<%= st %>" <%=query.status===st ? 'selected' : '' %>><%= st %>
+            </option>
+            <% }) %>
         </select>
       </div>
       <div class="col-md-2">
         <select name="sort" class="form-select">
           <option value="">Newest First</option>
-          <option value="name" <%= query.sort === 'name' ? 'selected' : '' %>>Name (A-Z)</option>
-          <option value="age" <%= query.sort === 'age' ? 'selected' : '' %>>Youngest First</option>
+          <option value="name" <%=query.sort==='name' ? 'selected' : '' %>>Name (A-Z)</option>
+          <option value="age" <%=query.sort==='age' ? 'selected' : '' %>>Youngest First</option>
         </select>
       </div>
       <div class="col-md-1">
@@ -85,22 +91,36 @@
     </form>
 
     <div class="row">
-      <% if (pets.length === 0) { %>
+      <% if (pets.length===0) { %>
         <p class="text-center">No pets match your search.</p>
-      <% } %>
-      <% pets.forEach(pet => { %>
-        <div class="col-md-4 mb-4">
-          <div class="card h-100">
-            <img src="/images/<%= pet.image || 'placeholder.png' %>" class="card-img-top" style="height:200px; object-fit:cover;" alt="<%= pet.name %>">
-            <div class="card-body">
-              <h5 class="card-title"><a href="/pets/<%= pet.id %>"><%= pet.name %></a></h5>
-              <p class="card-text mb-1"><%= pet.breed %> &middot; <%= pet.ageGroup %> &middot; <%= pet.gender %></p>
-              <span class="badge bg-secondary"><%= pet.adoptionStatus %></span>
+        <% } %>
+          <% pets.forEach(pet=> { %>
+            <div class="col-md-4 mb-4">
+              <div class="card h-100">
+                <img src="/images/<%= pet.image || 'placeholder.png' %>" class="card-img-top"
+                  style="height:200px; object-fit:cover; object-position:top;" alt="<%= pet.name %>">
+                <div class="card-body">
+                  <h5 class="card-title"><a href="/pets/<%= pet.id %>">
+                      <%= pet.name %>
+                    </a></h5>
+                  <p class="card-text mb-1">
+                    <%= pet.breed %> &middot; <%= pet.ageGroup %> &middot; <%= pet.gender %>
+                  </p>
+                  <span class="badge <%= 
+                      pet.adoptionStatus === 'Available' ? 'bg-success' : 
+                      pet.adoptionStatus === 'Pending' ? 'bg-warning text-dark' : 
+                      pet.adoptionStatus === 'Adopted' ? 'bg-danger' : 
+                      pet.adoptionStatus === 'Medical Hold' ? 'bg-info text-dark' : 
+                      'bg-secondary' 
+                    %>">
+                    <%= pet.adoptionStatus %>
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      <% }) %>
+            <% }) %>
     </div>
   </div>
 </body>
+
 </html>
