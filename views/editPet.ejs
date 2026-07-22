@@ -59,7 +59,6 @@
     <% } %>
     <h2 class="text-center mb-4">Edit <%= pet.name %></h2>
     <form action="/editPet/<%= pet.id %>" method="POST" enctype="multipart/form-data" class="mx-auto" style="max-width: 700px;">
-      <input type="hidden" name="currentImage" value="<%= pet.image || '' %>">
 
       <div class="row mb-3">
         <div class="col-md-6">
@@ -189,7 +188,7 @@
 
       <div class="mb-3">
         <label class="form-label">Current Photo</label><br>
-        <img src="/images/<%= pet.image || 'placeholder.png' %>" style="max-height:120px;" class="mb-2"><br>
+        <img src="/images/pet/<%= pet.id %>" style="max-height:120px;" class="mb-2"><br>
         <label class="form-label">Replace Photo (optional)</label>
         <input class="form-control" type="file" name="image" accept="image/*">
       </div>

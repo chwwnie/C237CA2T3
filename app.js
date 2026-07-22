@@ -4,12 +4,7 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const flash = require('connect-flash');
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const app = express();
-
-const uploadDir = path.join(__dirname, 'public', 'images');
-fs.mkdirSync(uploadDir, { recursive: true });
 
 // MySQL database connection
 const db = mysql.createConnection({
@@ -22,30 +17,12 @@ const db = mysql.createConnection({
     }
 });
 
-// Set up multer for pet image uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        // Prefix with a timestamp so two uploads with the same original filename
-        // (e.g. two different pets both named "photo.jpg") never collide and
-        // silently overwrite each other's image on disk.
-        const ext = path.extname(file.originalname || '');
-        const base = path.basename(file.originalname || 'image', ext).replace(/[^a-zA-Z0-9._-]/g, '_');
-        cb(null, `${Date.now()}-${base}${ext}`.toLowerCase());
-    }
-});
-const upload = multer({ storage: storage });
-
-const deleteImageFile = (filename) => {
-    if (!filename) return;
-    const filePath = path.join(uploadDir, filename);
-    if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-    }
-};
-
+// Pet photos are stored as bytes in the pets table (imageData/imageMimeType),
+// not on the local/server disk - Render's free-tier filesystem is wiped on
+// every redeploy, so a file saved there wouldn't survive or be shared between
+// deployments. Reading the upload into memory instead of writing it to disk
+// gives us req.file.buffer, which we insert straight into the database.
+const upload = multer({ storage: multer.memoryStorage() });
 
 db.connect((err) => {
     if (err) {
@@ -288,6 +265,19 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
     });
 });
 
+// [Enhancement] Serve a pet's photo straight out of the database (imageData)
+// instead of from a file on disk. Falls back to the static placeholder if
+// the pet has no photo stored, so <img src="/images/pet/:id"> always works.
+app.get('/images/pet/:id', (req, res) => {
+    db.query('SELECT imageData, imageMimeType FROM pets WHERE id = ?', [req.params.id], (err, results) => {
+        if (err || results.length === 0 || !results[0].imageData) {
+            return res.redirect('/images/placeholder.png');
+        }
+        res.set('Content-Type', results[0].imageMimeType || 'image/jpeg');
+        res.send(results[0].imageData);
+    });
+});
+
 // ==================== STUDENT C: VIEWING / DISPLAYING PETS ====================
 // (Search & filter logic marked [Student F] lives inside the same route,
 //  since the pet list and its filters share one query)
@@ -384,18 +374,25 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
     const friendlyWithOtherPets = req.body.friendlyWithOtherPets ? 1 : 0;
     const specialNeeds = req.body.specialNeeds ? 1 : 0;
     const healthy = req.body.healthy ? 1 : 0;
-    const image = req.file ? req.file.filename : null;
+    // The photo's original filename is kept only as display metadata - the
+    // actual image bytes go into imageData so they're stored in the database
+    // instead of on disk (see the multer.memoryStorage() comment above).
+    const image = req.file ? req.file.originalname : null;
+    const imageData = req.file ? req.file.buffer : null;
+    const imageMimeType = req.file ? req.file.mimetype : null;
 
     const sql = `INSERT INTO pets
         (name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
          medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus,
-         friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+         friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy,
+         image, imageData, imageMimeType)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     db.query(sql, [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
         medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus || 'Available',
-        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image
+        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy,
+        image, imageData, imageMimeType
     ], (err, result) => {
         if (err) {
             console.error('Error adding pet:', err);
@@ -428,7 +425,7 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     const {
         name, species, breed, ageMonths, ageGroup, gender, weightLbs,
         personality, description, medicalHistory, vaccinationStatus,
-        rescueDate, shelterLocation, kennelCode, adoptionStatus, currentImage
+        rescueDate, shelterLocation, kennelCode, adoptionStatus
     } = req.body;
 
     const friendlyWithPeople = req.body.friendlyWithPeople ? 1 : 0;
@@ -439,28 +436,30 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     const specialNeeds = req.body.specialNeeds ? 1 : 0;
     const healthy = req.body.healthy ? 1 : 0;
 
-    // retain existing image unless a new one is uploaded
-    const image = req.file ? req.file.filename : currentImage;
-
-    const sql = `UPDATE pets SET
+    let sql = `UPDATE pets SET
         name=?, species=?, breed=?, ageMonths=?, ageGroup=?, gender=?, weightLbs=?, personality=?, description=?,
         medicalHistory=?, vaccinationStatus=?, rescueDate=?, shelterLocation=?, kennelCode=?, adoptionStatus=?,
-        friendlyWithPeople=?, friendlyWithKids=?, friendlyWithDogs=?, friendlyWithCats=?, friendlyWithOtherPets=?, specialNeeds=?, healthy=?, image=?
-        WHERE id=?`;
-
-    db.query(sql, [
+        friendlyWithPeople=?, friendlyWithKids=?, friendlyWithDogs=?, friendlyWithCats=?, friendlyWithOtherPets=?, specialNeeds=?, healthy=?`;
+    const params = [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
         medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus,
-        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image,
-        petId
-    ], (err, result) => {
+        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy
+    ];
+
+    // Only touch the image columns if a new photo was actually uploaded -
+    // otherwise leave the existing stored image bytes untouched.
+    if (req.file) {
+        sql += `, image=?, imageData=?, imageMimeType=?`;
+        params.push(req.file.originalname, req.file.buffer, req.file.mimetype);
+    }
+    sql += ` WHERE id=?`;
+    params.push(petId);
+
+    db.query(sql, params, (err, result) => {
         if (err) {
             console.error('Error updating pet:', err);
             req.flash('error', 'Error updating pet. Please check your input and try again.');
             return res.redirect('/editPet/' + petId);
-        }
-        if (req.file && currentImage && currentImage !== image) {
-            deleteImageFile(currentImage);
         }
         req.flash('success', 'Pet updated successfully!');
         res.redirect('/pets/' + petId);
@@ -471,24 +470,16 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
 
 app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     const petId = req.params.id;
-    db.query('SELECT image FROM pets WHERE id = ?', [petId], (err, results) => {
+    // The photo lives in the imageData column, so deleting the row is enough -
+    // no separate file to clean up on disk.
+    db.query('DELETE FROM pets WHERE id = ?', [petId], (err, result) => {
         if (err) {
             console.error('Error deleting pet:', err);
             req.flash('error', 'Error deleting pet.');
             return res.redirect('/pets');
         }
-
-        const currentImage = results[0] && results[0].image ? results[0].image : null;
-        db.query('DELETE FROM pets WHERE id = ?', [petId], (err, result) => {
-            if (err) {
-                console.error('Error deleting pet:', err);
-                req.flash('error', 'Error deleting pet.');
-                return res.redirect('/pets');
-            }
-            deleteImageFile(currentImage);
-            req.flash('success', 'Pet removed.');
-            res.redirect('/pets');
-        });
+        req.flash('success', 'Pet removed.');
+        res.redirect('/pets');
     });
 });
 

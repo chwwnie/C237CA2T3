@@ -40,6 +40,10 @@ CREATE TABLE pets (
     specialNeeds TINYINT(1) NOT NULL DEFAULT 0,
     healthy TINYINT(1) NOT NULL DEFAULT 1,
     image VARCHAR(255),
+    -- Photo bytes are stored here instead of on disk, since Render's free-tier
+    -- filesystem is wiped on every redeploy and wouldn't persist an uploaded file.
+    imageData LONGBLOB,
+    imageMimeType VARCHAR(100),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

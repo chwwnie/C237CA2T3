@@ -69,7 +69,7 @@
       <% pets.forEach(pet => { %>
         <div class="col-md-4 mb-4">
           <div class="card h-100">
-            <img src="/images/<%= pet.image || 'placeholder.png' %>" class="card-img-top" style="height:200px; object-fit:cover;" alt="<%= pet.name %>">
+            <img src="/images/pet/<%= pet.id %>" class="card-img-top" style="height:200px; object-fit:cover;" alt="<%= pet.name %>">
             <div class="card-body">
               <h5 class="card-title"><a href="/pets/<%= pet.id %>"><%= pet.name %></a></h5>
               <p class="card-text mb-1"><%= pet.breed %> &middot; <%= pet.ageGroup %></p>
