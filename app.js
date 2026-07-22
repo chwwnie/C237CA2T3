@@ -3,18 +3,12 @@ const mysql = require('mysql2');
 const session = require('express-session');
 const flash = require('connect-flash');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 
-// Set up multer for pet image uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'public/images');
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname);
-    }
-});
-const upload = multer({ storage: storage });
+const uploadDir = path.join(__dirname, 'public', 'images');
+fs.mkdirSync(uploadDir, { recursive: true });
 
 // MySQL database connection
 const db = mysql.createConnection({
@@ -26,6 +20,28 @@ const db = mysql.createConnection({
         rejectUnauthorized: false
     }
 });
+
+// Set up multer for pet image uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname || '');
+        const base = path.basename(file.originalname || 'image', ext).replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `${base}${ext}`.toLowerCase());
+    }
+});
+const upload = multer({ storage: storage });
+
+const deleteImageFile = (filename) => {
+    if (!filename) return;
+    const filePath = path.join(uploadDir, filename);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+    }
+};
+
 
 db.connect((err) => {
     if (err) {
@@ -228,6 +244,7 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
         rescueDate, shelterLocation, kennelCode, adoptionStatus
     } = req.body;
 
+    const friendlyWithPeople = req.body.friendlyWithPeople ? 1 : 0;
     const friendlyWithKids = req.body.friendlyWithKids ? 1 : 0;
     const friendlyWithDogs = req.body.friendlyWithDogs ? 1 : 0;
     const friendlyWithCats = req.body.friendlyWithCats ? 1 : 0;
@@ -239,13 +256,13 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
     const sql = `INSERT INTO pets
         (name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
          medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus,
-         friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+         friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     db.query(sql, [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
         medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus || 'Available',
-        friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image
+        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image
     ], (err, result) => {
         if (err) {
             console.error('Error adding pet:', err);
@@ -277,6 +294,7 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
         rescueDate, shelterLocation, kennelCode, adoptionStatus, currentImage
     } = req.body;
 
+    const friendlyWithPeople = req.body.friendlyWithPeople ? 1 : 0;
     const friendlyWithKids = req.body.friendlyWithKids ? 1 : 0;
     const friendlyWithDogs = req.body.friendlyWithDogs ? 1 : 0;
     const friendlyWithCats = req.body.friendlyWithCats ? 1 : 0;
@@ -290,18 +308,21 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     const sql = `UPDATE pets SET
         name=?, species=?, breed=?, ageMonths=?, ageGroup=?, gender=?, weightLbs=?, personality=?, description=?,
         medicalHistory=?, vaccinationStatus=?, rescueDate=?, shelterLocation=?, kennelCode=?, adoptionStatus=?,
-        friendlyWithKids=?, friendlyWithDogs=?, friendlyWithCats=?, friendlyWithOtherPets=?, specialNeeds=?, healthy=?, image=?
+        friendlyWithPeople=?, friendlyWithKids=?, friendlyWithDogs=?, friendlyWithCats=?, friendlyWithOtherPets=?, specialNeeds=?, healthy=?, image=?
         WHERE id=?`;
 
     db.query(sql, [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
         medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus,
-        friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image,
+        friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy, image,
         petId
     ], (err, result) => {
         if (err) {
             console.error('Error updating pet:', err);
             return res.status(500).send('Error updating pet');
+        }
+        if (req.file && currentImage && currentImage !== image) {
+            deleteImageFile(currentImage);
         }
         req.flash('success', 'Pet updated successfully!');
         res.redirect('/pets/' + petId);
@@ -312,13 +333,22 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
 
 app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     const petId = req.params.id;
-    db.query('DELETE FROM pets WHERE id = ?', [petId], (err, result) => {
+    db.query('SELECT image FROM pets WHERE id = ?', [petId], (err, results) => {
         if (err) {
             console.error('Error deleting pet:', err);
             return res.status(500).send('Error deleting pet');
         }
-        req.flash('success', 'Pet removed.');
-        res.redirect('/pets');
+
+        const currentImage = results[0] && results[0].image ? results[0].image : null;
+        db.query('DELETE FROM pets WHERE id = ?', [petId], (err, result) => {
+            if (err) {
+                console.error('Error deleting pet:', err);
+                return res.status(500).send('Error deleting pet');
+            }
+            deleteImageFile(currentImage);
+            req.flash('success', 'Pet removed.');
+            res.redirect('/pets');
+        });
     });
 });
 
@@ -423,7 +453,7 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
                 db.query('SELECT petId FROM applications WHERE id = ?', [applicationId], (err, appResults) => {
                     if (err) throw err;
                     db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
-                        [stage === 'Completed' ? 'Adopted' : 'Pending', appResults[0].petId]);
+                        [stage === 'Completed' ? 'Adopted' : stage === 'Pending' ? 'Pending' : 'Medical Hold', appResults[0].petId]);
                 });
             }
 

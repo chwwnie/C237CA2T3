@@ -40,9 +40,15 @@
       </div>
       <div class="col-md-7">
         <h1>
-          <%= pet.name %> <span class="badge bg-secondary">
-              <%= pet.adoptionStatus %>
-            </span>
+          <%= pet.name %> <span class="badge <%= 
+                      pet.adoptionStatus === 'Available' ? 'bg-success' : 
+                      pet.adoptionStatus === 'Pending' ? 'bg-warning text-dark' : 
+                      pet.adoptionStatus === 'Adopted' ? 'bg-danger' : 
+                      pet.adoptionStatus === 'Medical Hold' ? 'bg-info text-dark' : 
+                      'bg-secondary' 
+                    %>">
+                    <%= pet.adoptionStatus %>
+                  </span>
         </h1>
         <p class="text-muted">
           <%= pet.breed %> &middot; <%= pet.species %> &middot; <%= pet.ageGroup %> (<%= pet.ageMonths %> months)
