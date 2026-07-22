@@ -22,7 +22,18 @@ const db = mysql.createConnection({
 // every redeploy, so a file saved there wouldn't survive or be shared between
 // deployments. Reading the upload into memory instead of writing it to disk
 // gives us req.file.buffer, which we insert straight into the database.
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB - stops someone uploading a huge file straight into the DB
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed.'));
+        }
+    }
+});
 
 db.connect((err) => {
     if (err) {
@@ -308,7 +319,10 @@ app.get('/pets', checkAuthenticated, (req, res) => {
         sql += ' AND adoptionStatus = ?';
         params.push(status);
     } else {
-        sql += " AND adoptionStatus != 'Archived'";
+        // Once a pet is Adopted it's no longer relevant to someone browsing for
+        // a pet to adopt - hide it (and Archived pets) from the default view.
+        // An explicit status filter (e.g. an admin reviewing "Adopted") still works.
+        sql += " AND adoptionStatus NOT IN ('Archived', 'Adopted')";
     }
     // [Student F] Filter by good with kids
     if (goodWithKids === 'true') {
@@ -592,6 +606,25 @@ app.get('/my-applications', checkAuthenticated, (req, res) => {
     });
 });
 
+// [Enhancement] Let a user withdraw their own application, but only while
+// it's still awaiting a decision - once approved/rejected, it's final.
+app.post('/my-applications/:id/withdraw', checkAuthenticated, (req, res) => {
+    const applicationId = req.params.id;
+    db.query(
+        "DELETE FROM applications WHERE id = ? AND userId = ? AND stage = 'Submitted'",
+        [applicationId, req.session.user.id],
+        (err, result) => {
+            if (err) throw err;
+            if (result.affectedRows === 0) {
+                req.flash('error', 'This application can no longer be withdrawn.');
+            } else {
+                req.flash('success', 'Application withdrawn.');
+            }
+            res.redirect('/my-applications');
+        }
+    );
+});
+
 // [Student F / Admin] View and manage all applications
 app.get('/applications', checkAuthenticated, checkAdmin, (req, res) => {
     const sql = `SELECT applications.*, pets.name AS petName, users.username AS applicantName, users.email AS applicantEmail
@@ -612,6 +645,13 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
     const applicationId = req.params.id;
     const { stage, decisionNotes } = req.body;
 
+    // The UI only offers two buttons (Approve / Reject) - guard against
+    // anything else reaching here (e.g. a hand-crafted request).
+    if (stage !== 'Approved' && stage !== 'Rejected') {
+        req.flash('error', 'Invalid decision.');
+        return res.redirect('/applications');
+    }
+
     db.query('UPDATE applications SET stage = ?, decisionNotes = ? WHERE id = ?',
         [stage, decisionNotes, applicationId], (err, result) => {
             if (err) throw err;
@@ -623,14 +663,16 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
                 if (err) throw err;
                 const { userId, petId, petName } = infoResults[0];
 
-                // Keep pet adoptionStatus in sync with an approved/completed application
-                if (stage === 'Approved' || stage === 'Completed') {
-                    db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
-                        [stage === 'Completed' ? 'Adopted' : 'Pending', petId]);
+                // Approving finalises the adoption immediately - the pet is Adopted
+                // right away and drops out of the default browse list for other users.
+                if (stage === 'Approved') {
+                    db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?', ['Adopted', petId]);
                 }
 
-                // [Enhancement] Notify the applicant that their application stage changed
-                const message = `Your application for ${petName} has been updated to "${stage}".`;
+                // [Enhancement] Notify the applicant of the decision
+                const message = stage === 'Approved'
+                    ? `Great news! Your application for ${petName} has been approved.`
+                    : `Your application for ${petName} was not approved this time.`;
                 db.query('INSERT INTO notifications (userId, message) VALUES (?, ?)', [userId, message]);
 
                 req.flash('success', 'Application updated.');
@@ -648,6 +690,18 @@ app.get('/notifications', checkAuthenticated, (req, res) => {
             res.render('notifications', { notifications: results, user: req.session.user });
         });
     });
+});
+
+// Catches errors thrown by multer (file too large / wrong file type) so an
+// invalid upload flashes a friendly message instead of crashing the request.
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError || (err && err.message === 'Only image files are allowed.')) {
+        req.flash('error', err.code === 'LIMIT_FILE_SIZE'
+            ? 'Image must be smaller than 5MB.'
+            : 'Only image files are allowed.');
+        return res.redirect(req.get('Referer') || '/pets');
+    }
+    next(err);
 });
 
 const PORT = process.env.PORT || 3000;

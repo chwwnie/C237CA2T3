@@ -58,38 +58,41 @@
       </div>
     <% } %>
     <h2 class="text-center mb-4">Manage Adoption Applications</h2>
-    <table class="table table-hover small text-center align-middle">
-      <thead>
-        <tr>
-          <th>Applicant</th>
-          <th>Pet</th>
-          <th>Family/Living</th>
-          <th>Current Stage</th>
-          <th>Update Stage</th>
-        </tr>
-      </thead>
-      <tbody>
-        <% applications.forEach(a => { %>
-          <tr>
-            <td><%= a.applicantName %><br><small class="text-muted"><%= a.applicantEmail %></small></td>
-            <td><%= a.petName %></td>
-            <td><%= a.livingSpace %>, <%= a.familyMembers %> members</td>
-            <td><span class="badge bg-info text-dark"><%= a.stage %></span></td>
-            <td>
-              <form action="/applications/<%= a.id %>/stage" method="POST" class="d-flex gap-1 justify-content-center">
-                <select name="stage" class="form-select form-select-sm" style="width:auto;">
-                  <% ['Submitted','Under Review','Interview Scheduled','Home Visit','Approved','Rejected','Completed'].forEach(st => { %>
-                    <option value="<%= st %>" <%= a.stage === st ? 'selected' : '' %>><%= st %></option>
-                  <% }) %>
-                </select>
-                <input type="text" name="decisionNotes" class="form-control form-control-sm" placeholder="Notes" value="<%= a.decisionNotes || '' %>" style="width:140px;">
-                <button type="submit" class="btn btn-sm btn-primary">Update</button>
-              </form>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <% if (applications.length === 0) { %>
+      <p class="text-center text-muted">No applications yet.</p>
+    <% } %>
+    <div class="d-flex flex-column gap-3">
+      <% applications.forEach(a => { %>
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <div class="row align-items-center gy-2">
+              <div class="col-md-3">
+                <div class="fw-semibold"><%= a.applicantName %></div>
+                <div class="text-muted small"><%= a.applicantEmail %></div>
+              </div>
+              <div class="col-md-2">
+                <div><%= a.petName %></div>
+                <div class="text-muted small"><%= a.livingSpace %>, <%= a.familyMembers %> members</div>
+              </div>
+              <div class="col-md-2">
+                <span class="badge <%=
+                    a.stage === 'Approved' ? 'bg-success' :
+                    a.stage === 'Rejected' ? 'bg-danger' :
+                    'bg-secondary'
+                  %>"><%= a.stage %></span>
+              </div>
+              <div class="col-md-5">
+                <form action="/applications/<%= a.id %>/stage" method="POST" class="d-flex gap-2 flex-wrap align-items-center">
+                  <input type="text" name="decisionNotes" class="form-control form-control-sm flex-grow-1" placeholder="Notes (optional)" value="<%= a.decisionNotes || '' %>" style="min-width:140px;">
+                  <button type="submit" name="stage" value="Approved" class="btn btn-sm btn-success">Approve</button>
+                  <button type="submit" name="stage" value="Rejected" class="btn btn-sm btn-danger">Reject</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
   </div>
 </body>
 </html>

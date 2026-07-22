@@ -63,7 +63,7 @@
         <% messages.forEach(function(m) { %><p class="mb-0"><%= m %></p><% }); %>
       </div>
     <% } %>
-    <h2 class="text-center mb-4">Available Pets</h2>
+    <h2 class="text-center mb-4"><%= query.status ? query.status + ' Pets' : 'Available Pets' %></h2>
 
     <!-- Search / Filter form -->
     <form action="/pets" method="GET" class="row g-2 mb-4">
