@@ -358,9 +358,13 @@ app.get('/pets', checkAuthenticated, (req, res) => {
 
     db.query(sql, params, (err, results) => {
         if (err) throw err;
-        res.render('pets', {
-            pets: results, user: req.session.user, query: req.query,
-            messages: req.flash('success'), errors: req.flash('error')
+        db.query('SELECT petId FROM favourites WHERE userId = ?', [req.session.user.id], (err, favouriteResults) => {
+            if (err) throw err;
+            res.render('pets', {
+                pets: results, user: req.session.user, query: req.query,
+                favouritePetIds: favouriteResults.map(favourite => favourite.petId),
+                messages: req.flash('success'), errors: req.flash('error')
+            });
         });
     });
 });
@@ -526,12 +530,12 @@ app.post('/pets/:id/favourite', checkAuthenticated, (req, res) => {
         if (results.length > 0) {
             db.query('DELETE FROM favourites WHERE userId = ? AND petId = ?', [userId, petId], (err) => {
                 if (err) throw err;
-                saveAndRedirect(req, res, '/pets/' + petId);
+                saveAndRedirect(req, res, req.get('Referer') || '/pets');
             });
         } else {
             db.query('INSERT INTO favourites (userId, petId) VALUES (?, ?)', [userId, petId], (err) => {
                 if (err) throw err;
-                saveAndRedirect(req, res, '/pets/' + petId);
+                saveAndRedirect(req, res, req.get('Referer') || '/pets');
             });
         }
     });
