@@ -90,6 +90,21 @@ app.use(session({
 
 app.use(flash());
 
+// [Enhancement] Make the unread notification count available to every view
+// (res.locals is auto-available in EJS templates without passing it manually),
+// so the notification bell badge can show up in the navbar on any page.
+app.use((req, res, next) => {
+    if (!req.session.user) {
+        res.locals.unreadCount = 0;
+        return next();
+    }
+    db.query('SELECT COUNT(*) AS count FROM notifications WHERE userId = ? AND isRead = 0',
+        [req.session.user.id], (err, results) => {
+            res.locals.unreadCount = err ? 0 : results[0].count;
+            next();
+        });
+});
+
 // ==================== MIDDLEWARE ====================
 // [Student A] Middleware to check if user is logged in
 const checkAuthenticated = (req, res, next) => {
@@ -559,18 +574,38 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
         [stage, decisionNotes, applicationId], (err, result) => {
             if (err) throw err;
 
-            // Keep pet adoptionStatus in sync with an approved/completed application
-            if (stage === 'Approved' || stage === 'Completed') {
-                db.query('SELECT petId FROM applications WHERE id = ?', [applicationId], (err, appResults) => {
-                    if (err) throw err;
-                    db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
-                        [stage === 'Completed' ? 'Adopted' : stage === 'Pending' ? 'Pending' : 'Medical Hold', appResults[0].petId]);
-                });
-            }
+            const infoSql = `SELECT applications.userId, pets.id AS petId, pets.name AS petName
+                              FROM applications JOIN pets ON applications.petId = pets.id
+                              WHERE applications.id = ?`;
+            db.query(infoSql, [applicationId], (err, infoResults) => {
+                if (err) throw err;
+                const { userId, petId, petName } = infoResults[0];
 
-            req.flash('success', 'Application updated.');
-            res.redirect('/applications');
+                // Keep pet adoptionStatus in sync with an approved/completed application
+                if (stage === 'Approved' || stage === 'Completed') {
+                    db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
+                        [stage === 'Completed' ? 'Adopted' : 'Pending', petId]);
+                }
+
+                // [Enhancement] Notify the applicant that their application stage changed
+                const message = `Your application for ${petName} has been updated to "${stage}".`;
+                db.query('INSERT INTO notifications (userId, message) VALUES (?, ?)', [userId, message]);
+
+                req.flash('success', 'Application updated.');
+                res.redirect('/applications');
+            });
         });
+});
+
+// [Enhancement] View my notifications - opening the page marks them all as read
+app.get('/notifications', checkAuthenticated, (req, res) => {
+    db.query('SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC', [req.session.user.id], (err, results) => {
+        if (err) throw err;
+        db.query('UPDATE notifications SET isRead = 1 WHERE userId = ? AND isRead = 0', [req.session.user.id], (err) => {
+            if (err) throw err;
+            res.render('notifications', { notifications: results, user: req.session.user });
+        });
+    });
 });
 
 const PORT = process.env.PORT || 3000;

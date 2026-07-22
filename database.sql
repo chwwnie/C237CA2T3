@@ -72,6 +72,16 @@ CREATE TABLE favourites (
     FOREIGN KEY (petId) REFERENCES pets(id) ON DELETE CASCADE
 );
 
+-- Enhancement: in-app notifications, e.g. "your application was Approved"
+CREATE TABLE notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    userId INT NOT NULL,
+    message VARCHAR(255) NOT NULL,
+    isRead TINYINT(1) NOT NULL DEFAULT 0,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Sample admin account (password: admin123)
 INSERT INTO users (username, email, password, role, phone, address)
 VALUES ('admin', 'admin@petshelter.com', SHA1('admin123'), 'admin', '91234567', 'Shelter HQ');
