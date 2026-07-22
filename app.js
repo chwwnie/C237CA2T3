@@ -81,6 +81,20 @@ app.use(session({
 
 app.use(flash());
 
+// express-mysql-session writes every session change to Azure over the network,
+// so a redirect fired immediately after req.flash()/req.session.user = ... can
+// reach the browser before that write actually lands in the database - the very
+// next request (the page we just redirected to) can then load a session that's
+// missing the change, which is what caused "have to log in / out twice" and a
+// flash message from one action surfacing on a later, unrelated page. Waiting
+// for req.session.save() to finish before redirecting fixes both.
+const saveAndRedirect = (req, res, url) => {
+    req.session.save((err) => {
+        if (err) console.error('Session save error:', err.message);
+        res.redirect(url);
+    });
+};
+
 // [Enhancement] Make the unread notification count available to every view
 // (res.locals is auto-available in EJS templates without passing it manually),
 // so the notification bell badge can show up in the navbar on any page.
@@ -103,7 +117,7 @@ const checkAuthenticated = (req, res, next) => {
         return next();
     } else {
         req.flash('error', 'Please log in to view this resource');
-        res.redirect('/login');
+        saveAndRedirect(req, res, '/login');
     }
 };
 
@@ -113,7 +127,7 @@ const checkAdmin = (req, res, next) => {
         return next();
     } else {
         req.flash('error', 'Access denied');
-        res.redirect('/pets');
+        saveAndRedirect(req, res, '/pets');
     }
 };
 
@@ -130,17 +144,17 @@ const validateRegistration = (req, res, next) => {
     if (!username || !email || !password || !phone || !address) {
         req.flash('error', 'All fields are required.');
         req.flash('formData', req.body);
-        return res.redirect('/register');
+        return saveAndRedirect(req, res, '/register');
     }
     if (password.length < 6) {
         req.flash('error', 'Password should be at least 6 or more characters long');
         req.flash('formData', req.body);
-        return res.redirect('/register');
+        return saveAndRedirect(req, res, '/register');
     }
     if (password !== confirmPassword) {
         req.flash('error', 'Passwords do not match.');
         req.flash('formData', req.body);
-        return res.redirect('/register');
+        return saveAndRedirect(req, res, '/register');
     }
     next();
 };
@@ -169,12 +183,12 @@ app.post('/register', validateRegistration, (req, res) => {
             if (err.code === 'ER_DUP_ENTRY') {
                 req.flash('error', 'That email is already registered. Try logging in instead.');
                 req.flash('formData', req.body);
-                return res.redirect('/register');
+                return saveAndRedirect(req, res, '/register');
             }
             throw err;
         }
         req.flash('success', 'Registration successful! Please log in.');
-        res.redirect('/login');
+        saveAndRedirect(req, res, '/login');
     });
 });
 
@@ -189,7 +203,7 @@ app.post('/login', (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
         req.flash('error', 'All fields are required.');
-        return res.redirect('/login');
+        return saveAndRedirect(req, res, '/login');
     }
     const sql = 'SELECT * FROM users WHERE email = ? AND password = SHA1(?)';
     db.query(sql, [email, password], (err, results) => {
@@ -199,17 +213,22 @@ app.post('/login', (req, res) => {
         if (results.length > 0) {
             req.session.user = results[0];
             req.flash('success', 'Login successful!');
-            res.redirect('/pets');
+            saveAndRedirect(req, res, '/pets');
         } else {
             req.flash('error', 'Invalid email or password.');
-            res.redirect('/login');
+            saveAndRedirect(req, res, '/login');
         }
     });
 });
 
 app.get('/logout', (req, res) => {
-    req.session.destroy();
-    res.redirect('/');
+    // Wait for the session to actually be removed from the store before
+    // redirecting, for the same reason saveAndRedirect exists above - otherwise
+    // the next request can still see the old (soon-to-be-deleted) session.
+    req.session.destroy((err) => {
+        if (err) console.error('Session destroy error:', err.message);
+        res.redirect('/');
+    });
 });
 
 // [Student A] Personalisation feature: users manage their own account info
@@ -228,7 +247,7 @@ app.post('/profile', checkAuthenticated, (req, res) => {
 
     if (!username || !phone || !address) {
         req.flash('error', 'All fields are required.');
-        return res.redirect('/profile');
+        return saveAndRedirect(req, res, '/profile');
     }
 
     const sql = 'UPDATE users SET username = ?, phone = ?, address = ? WHERE id = ?';
@@ -239,7 +258,7 @@ app.post('/profile', checkAuthenticated, (req, res) => {
         req.session.user.phone = phone;
         req.session.user.address = address;
         req.flash('success', 'Profile updated successfully.');
-        res.redirect('/profile');
+        saveAndRedirect(req, res, '/profile');
     });
 });
 
@@ -248,15 +267,15 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
 
     if (!currentPassword || !newPassword || !confirmNewPassword) {
         req.flash('error', 'All password fields are required.');
-        return res.redirect('/profile');
+        return saveAndRedirect(req, res, '/profile');
     }
     if (newPassword.length < 6) {
         req.flash('error', 'New password should be at least 6 or more characters long.');
-        return res.redirect('/profile');
+        return saveAndRedirect(req, res, '/profile');
     }
     if (newPassword !== confirmNewPassword) {
         req.flash('error', 'New passwords do not match.');
-        return res.redirect('/profile');
+        return saveAndRedirect(req, res, '/profile');
     }
 
     // verify current password is correct before allowing the change
@@ -265,13 +284,13 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
         if (err) throw err;
         if (results.length === 0) {
             req.flash('error', 'Current password is incorrect.');
-            return res.redirect('/profile');
+            return saveAndRedirect(req, res, '/profile');
         }
         const updateSql = 'UPDATE users SET password = SHA1(?) WHERE id = ?';
         db.query(updateSql, [newPassword, req.session.user.id], (err) => {
             if (err) throw err;
             req.flash('success', 'Password changed successfully.');
-            res.redirect('/profile');
+            saveAndRedirect(req, res, '/profile');
         });
     });
 });
@@ -282,7 +301,7 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
 app.get('/images/pet/:id', (req, res) => {
     db.query('SELECT imageData, imageMimeType FROM pets WHERE id = ?', [req.params.id], (err, results) => {
         if (err || results.length === 0 || !results[0].imageData) {
-            return res.redirect('/images/placeholder.png');
+            return saveAndRedirect(req, res, '/images/placeholder.png');
         }
         res.set('Content-Type', results[0].imageMimeType || 'image/jpeg');
         res.send(results[0].imageData);
@@ -411,10 +430,10 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
         if (err) {
             console.error('Error adding pet:', err);
             req.flash('error', 'Error adding pet. Please check your input and try again.');
-            return res.redirect('/addPet');
+            return saveAndRedirect(req, res, '/addPet');
         }
         req.flash('success', 'Pet added successfully!');
-        res.redirect('/pets');
+        saveAndRedirect(req, res, '/pets');
     });
 });
 
@@ -473,10 +492,10 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
         if (err) {
             console.error('Error updating pet:', err);
             req.flash('error', 'Error updating pet. Please check your input and try again.');
-            return res.redirect('/editPet/' + petId);
+            return saveAndRedirect(req, res, '/editPet/' + petId);
         }
         req.flash('success', 'Pet updated successfully!');
-        res.redirect('/pets/' + petId);
+        saveAndRedirect(req, res, '/pets/' + petId);
     });
 });
 
@@ -490,10 +509,10 @@ app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
         if (err) {
             console.error('Error deleting pet:', err);
             req.flash('error', 'Error deleting pet.');
-            return res.redirect('/pets');
+            return saveAndRedirect(req, res, '/pets');
         }
         req.flash('success', 'Pet removed.');
-        res.redirect('/pets');
+        saveAndRedirect(req, res, '/pets');
     });
 });
 
@@ -507,12 +526,12 @@ app.post('/pets/:id/favourite', checkAuthenticated, (req, res) => {
         if (results.length > 0) {
             db.query('DELETE FROM favourites WHERE userId = ? AND petId = ?', [userId, petId], (err) => {
                 if (err) throw err;
-                res.redirect('/pets/' + petId);
+                saveAndRedirect(req, res, '/pets/' + petId);
             });
         } else {
             db.query('INSERT INTO favourites (userId, petId) VALUES (?, ?)', [userId, petId], (err) => {
                 if (err) throw err;
-                res.redirect('/pets/' + petId);
+                saveAndRedirect(req, res, '/pets/' + petId);
             });
         }
     });
@@ -546,7 +565,7 @@ app.get('/apply/:petId', checkAuthenticated, (req, res) => {
         // alone doesn't stop someone reaching this URL directly - enforce it here too.
         if (pet.adoptionStatus !== 'Available') {
             req.flash('error', 'This pet is no longer available for adoption.');
-            return res.redirect('/pets/' + petId);
+            return saveAndRedirect(req, res, '/pets/' + petId);
         }
         res.render('apply', { pet, user: req.session.user });
     });
@@ -568,11 +587,11 @@ app.post('/apply/:petId', checkAuthenticated, (req, res) => {
         const { adoptionStatus, activeCount } = checkResults[0];
         if (adoptionStatus !== 'Available') {
             req.flash('error', 'This pet is no longer available for adoption.');
-            return res.redirect('/pets/' + petId);
+            return saveAndRedirect(req, res, '/pets/' + petId);
         }
         if (activeCount > 0) {
             req.flash('error', 'You already have an active application for this pet.');
-            return res.redirect('/my-applications');
+            return saveAndRedirect(req, res, '/my-applications');
         }
 
         const { livingSpace, workingHours, familyMembers, existingPets, activityLevel, experience, motivation } = req.body;
@@ -586,7 +605,7 @@ app.post('/apply/:petId', checkAuthenticated, (req, res) => {
             (err, result) => {
                 if (err) throw err;
                 req.flash('success', 'Application submitted!');
-                res.redirect('/my-applications');
+                saveAndRedirect(req, res, '/my-applications');
             });
     });
 });
@@ -620,7 +639,7 @@ app.post('/my-applications/:id/withdraw', checkAuthenticated, (req, res) => {
             } else {
                 req.flash('success', 'Application withdrawn.');
             }
-            res.redirect('/my-applications');
+            saveAndRedirect(req, res, '/my-applications');
         }
     );
 });
@@ -649,7 +668,7 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
     // anything else reaching here (e.g. a hand-crafted request).
     if (stage !== 'Approved' && stage !== 'Rejected') {
         req.flash('error', 'Invalid decision.');
-        return res.redirect('/applications');
+        return saveAndRedirect(req, res, '/applications');
     }
 
     db.query('UPDATE applications SET stage = ?, decisionNotes = ? WHERE id = ?',
@@ -676,7 +695,7 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
                 db.query('INSERT INTO notifications (userId, message) VALUES (?, ?)', [userId, message]);
 
                 req.flash('success', 'Application updated.');
-                res.redirect('/applications');
+                saveAndRedirect(req, res, '/applications');
             });
         });
 });
@@ -699,7 +718,7 @@ app.use((err, req, res, next) => {
         req.flash('error', err.code === 'LIMIT_FILE_SIZE'
             ? 'Image must be smaller than 5MB.'
             : 'Only image files are allowed.');
-        return res.redirect(req.get('Referer') || '/pets');
+        return saveAndRedirect(req, res, req.get('Referer') || '/pets');
     }
     next(err);
 });
