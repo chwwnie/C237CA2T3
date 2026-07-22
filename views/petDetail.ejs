@@ -28,13 +28,22 @@
             <li class="nav-item"><a class="nav-link" href="/applications">Manage Applications</a></li>
           <% } %>
         </ul>
-        <ul class="navbar-nav">
+        <ul class="navbar-nav align-items-center">
+          <li class="nav-item">
+            <a class="nav-link position-relative px-3" href="/notifications" title="Notifications" aria-label="Notifications">
+              <span style="font-size:1.15rem;">&#128276;</span>
+              <% if (typeof unreadCount !== 'undefined' && unreadCount > 0) { %>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:0.6rem;">
+                  <%= unreadCount %>
+                </span>
+              <% } %>
+            </a>
+          </li>
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" id="userMenuDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              👤 <%= user.username %> <% if (typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="badge rounded-pill bg-danger"><%= unreadCount %></span><% } %>
+              &#128100; <%= user.username %>
             </a>
             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenuDropdown">
-              <li><a class="dropdown-item" href="/notifications">🔔 Notifications</a></li>
               <li><a class="dropdown-item" href="/profile">My Profile</a></li>
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="/logout">Logout</a></li>
