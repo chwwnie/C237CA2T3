@@ -38,6 +38,16 @@
   </nav>
 
   <div class="container mt-4">
+    <% if (typeof errors !== 'undefined' && errors && errors.length > 0) { %>
+      <div class="alert alert-danger">
+        <% errors.forEach(function(e) { %><p class="mb-0"><%= e %></p><% }); %>
+      </div>
+    <% } %>
+    <% if (typeof messages !== 'undefined' && messages && messages.length > 0) { %>
+      <div class="alert alert-success">
+        <% messages.forEach(function(m) { %><p class="mb-0"><%= m %></p><% }); %>
+      </div>
+    <% } %>
     <h2 class="text-center mb-4">Add New Pet</h2>
     <form action="/addPet" method="POST" enctype="multipart/form-data" class="mx-auto" style="max-width: 700px;">
 

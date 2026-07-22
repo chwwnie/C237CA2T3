@@ -32,6 +32,7 @@ CREATE TABLE pets (
     shelterLocation VARCHAR(160),
     kennelCode VARCHAR(40),
     adoptionStatus ENUM('Available','Pending','Adopted','Medical Hold','Archived') NOT NULL DEFAULT 'Available',
+    friendlyWithPeople TINYINT(1) NOT NULL DEFAULT 0,
     friendlyWithKids TINYINT(1) NOT NULL DEFAULT 0,
     friendlyWithDogs TINYINT(1) NOT NULL DEFAULT 0,
     friendlyWithCats TINYINT(1) NOT NULL DEFAULT 0,

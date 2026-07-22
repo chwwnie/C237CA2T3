@@ -28,9 +28,12 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
+        // Prefix with a timestamp so two uploads with the same original filename
+        // (e.g. two different pets both named "photo.jpg") never collide and
+        // silently overwrite each other's image on disk.
         const ext = path.extname(file.originalname || '');
         const base = path.basename(file.originalname || 'image', ext).replace(/[^a-zA-Z0-9._-]/g, '_');
-        cb(null, `${base}${ext}`.toLowerCase());
+        cb(null, `${Date.now()}-${base}${ext}`.toLowerCase());
     }
 });
 const upload = multer({ storage: storage });
@@ -165,13 +168,13 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', validateRegistration, (req, res) => {
-    const { username, email, password, phone, address, role } = req.body;
-    // TESTING ONLY: role is picked from the form. Remove this dropdown / hardcode
-    // role to 'user' before final submission so visitors can't self-promote to admin.
-    const chosenRole = role === 'admin' ? 'admin' : 'user';
+    const { username, email, password, phone, address } = req.body;
+    // Every self-registered account is a regular user. To create an admin
+    // account, promote an existing user directly in MySQL:
+    //   UPDATE users SET role = 'admin' WHERE email = '...';
 
     const sql = 'INSERT INTO users (username, email, password, phone, address, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
-    db.query(sql, [username, email, password, phone, address, chosenRole], (err, result) => {
+    db.query(sql, [username, email, password, phone, address, 'user'], (err, result) => {
         if (err) {
             // email is UNIQUE in the schema - handle that case gracefully instead
             // of crashing the whole server on a duplicate registration attempt
@@ -332,7 +335,10 @@ app.get('/pets', checkAuthenticated, (req, res) => {
 
     db.query(sql, params, (err, results) => {
         if (err) throw err;
-        res.render('pets', { pets: results, user: req.session.user, query: req.query });
+        res.render('pets', {
+            pets: results, user: req.session.user, query: req.query,
+            messages: req.flash('success'), errors: req.flash('error')
+        });
     });
 });
 
@@ -351,7 +357,8 @@ app.get('/pets/:id', checkAuthenticated, (req, res) => {
                 res.render('petDetail', {
                     pet: petResults[0],
                     user: req.session.user,
-                    isFavourite: favResults.length > 0
+                    isFavourite: favResults.length > 0,
+                    messages: req.flash('success'), errors: req.flash('error')
                 });
             });
     });
@@ -360,7 +367,7 @@ app.get('/pets/:id', checkAuthenticated, (req, res) => {
 // ==================== STUDENT B: ADDING NEW PETS ====================
 
 app.get('/addPet', checkAuthenticated, checkAdmin, (req, res) => {
-    res.render('addPet', { user: req.session.user });
+    res.render('addPet', { user: req.session.user, messages: req.flash('success'), errors: req.flash('error') });
 });
 
 app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req, res) => {
@@ -392,7 +399,8 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
     ], (err, result) => {
         if (err) {
             console.error('Error adding pet:', err);
-            return res.status(500).send('Error adding pet');
+            req.flash('error', 'Error adding pet. Please check your input and try again.');
+            return res.redirect('/addPet');
         }
         req.flash('success', 'Pet added successfully!');
         res.redirect('/pets');
@@ -408,7 +416,10 @@ app.get('/editPet/:id', checkAuthenticated, checkAdmin, (req, res) => {
         if (results.length === 0) {
             return res.status(404).send('Pet not found');
         }
-        res.render('editPet', { pet: results[0], user: req.session.user });
+        res.render('editPet', {
+            pet: results[0], user: req.session.user,
+            messages: req.flash('success'), errors: req.flash('error')
+        });
     });
 });
 
@@ -445,7 +456,8 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     ], (err, result) => {
         if (err) {
             console.error('Error updating pet:', err);
-            return res.status(500).send('Error updating pet');
+            req.flash('error', 'Error updating pet. Please check your input and try again.');
+            return res.redirect('/editPet/' + petId);
         }
         if (req.file && currentImage && currentImage !== image) {
             deleteImageFile(currentImage);
@@ -462,14 +474,16 @@ app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     db.query('SELECT image FROM pets WHERE id = ?', [petId], (err, results) => {
         if (err) {
             console.error('Error deleting pet:', err);
-            return res.status(500).send('Error deleting pet');
+            req.flash('error', 'Error deleting pet.');
+            return res.redirect('/pets');
         }
 
         const currentImage = results[0] && results[0].image ? results[0].image : null;
         db.query('DELETE FROM pets WHERE id = ?', [petId], (err, result) => {
             if (err) {
                 console.error('Error deleting pet:', err);
-                return res.status(500).send('Error deleting pet');
+                req.flash('error', 'Error deleting pet.');
+                return res.redirect('/pets');
             }
             deleteImageFile(currentImage);
             req.flash('success', 'Pet removed.');
@@ -506,7 +520,10 @@ app.get('/favourites', checkAuthenticated, (req, res) => {
                  ORDER BY favourites.createdAt DESC`;
     db.query(sql, [req.session.user.id], (err, results) => {
         if (err) throw err;
-        res.render('favourites', { pets: results, user: req.session.user });
+        res.render('favourites', {
+            pets: results, user: req.session.user,
+            messages: req.flash('success'), errors: req.flash('error')
+        });
     });
 });
 
@@ -519,26 +536,54 @@ app.get('/apply/:petId', checkAuthenticated, (req, res) => {
         if (results.length === 0) {
             return res.status(404).send('Pet not found');
         }
-        res.render('apply', { pet: results[0], user: req.session.user });
+        const pet = results[0];
+        // The UI hides the "Apply to Adopt" button for non-Available pets, but that
+        // alone doesn't stop someone reaching this URL directly - enforce it here too.
+        if (pet.adoptionStatus !== 'Available') {
+            req.flash('error', 'This pet is no longer available for adoption.');
+            return res.redirect('/pets/' + petId);
+        }
+        res.render('apply', { pet, user: req.session.user });
     });
 });
 
 app.post('/apply/:petId', checkAuthenticated, (req, res) => {
     const petId = req.params.petId;
     const userId = req.session.user.id;
-    const { livingSpace, workingHours, familyMembers, existingPets, activityLevel, experience, motivation } = req.body;
-    const hasChildren = req.body.hasChildren ? 1 : 0;
 
-    const sql = `INSERT INTO applications
-        (petId, userId, livingSpace, workingHours, familyMembers, hasChildren, existingPets, activityLevel, experience, motivation)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const checkSql = `SELECT pets.adoptionStatus,
+            (SELECT COUNT(*) FROM applications
+             WHERE petId = ? AND userId = ? AND stage NOT IN ('Rejected', 'Completed')) AS activeCount
+        FROM pets WHERE pets.id = ?`;
+    db.query(checkSql, [petId, userId, petId], (err, checkResults) => {
+        if (err) throw err;
+        if (checkResults.length === 0) {
+            return res.status(404).send('Pet not found');
+        }
+        const { adoptionStatus, activeCount } = checkResults[0];
+        if (adoptionStatus !== 'Available') {
+            req.flash('error', 'This pet is no longer available for adoption.');
+            return res.redirect('/pets/' + petId);
+        }
+        if (activeCount > 0) {
+            req.flash('error', 'You already have an active application for this pet.');
+            return res.redirect('/my-applications');
+        }
 
-    db.query(sql, [petId, userId, livingSpace, workingHours, familyMembers, hasChildren, existingPets || 'None', activityLevel, experience, motivation],
-        (err, result) => {
-            if (err) throw err;
-            req.flash('success', 'Application submitted!');
-            res.redirect('/my-applications');
-        });
+        const { livingSpace, workingHours, familyMembers, existingPets, activityLevel, experience, motivation } = req.body;
+        const hasChildren = req.body.hasChildren ? 1 : 0;
+
+        const sql = `INSERT INTO applications
+            (petId, userId, livingSpace, workingHours, familyMembers, hasChildren, existingPets, activityLevel, experience, motivation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        db.query(sql, [petId, userId, livingSpace, workingHours, familyMembers, hasChildren, existingPets || 'None', activityLevel, experience, motivation],
+            (err, result) => {
+                if (err) throw err;
+                req.flash('success', 'Application submitted!');
+                res.redirect('/my-applications');
+            });
+    });
 });
 
 app.get('/my-applications', checkAuthenticated, (req, res) => {
@@ -549,7 +594,10 @@ app.get('/my-applications', checkAuthenticated, (req, res) => {
                  ORDER BY applications.updatedAt DESC`;
     db.query(sql, [req.session.user.id], (err, results) => {
         if (err) throw err;
-        res.render('myApplications', { applications: results, user: req.session.user });
+        res.render('myApplications', {
+            applications: results, user: req.session.user,
+            messages: req.flash('success'), errors: req.flash('error')
+        });
     });
 });
 
@@ -562,7 +610,10 @@ app.get('/applications', checkAuthenticated, checkAdmin, (req, res) => {
                  ORDER BY applications.updatedAt DESC`;
     db.query(sql, (err, results) => {
         if (err) throw err;
-        res.render('applications', { applications: results, user: req.session.user });
+        res.render('applications', {
+            applications: results, user: req.session.user,
+            messages: req.flash('success'), errors: req.flash('error')
+        });
     });
 });
 
