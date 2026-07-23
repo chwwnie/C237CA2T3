@@ -650,16 +650,21 @@ app.post('/my-applications/:id/withdraw', checkAuthenticated, (req, res) => {
 
 // [Student F / Admin] View and manage all applications
 app.get('/applications', checkAuthenticated, checkAdmin, (req, res) => {
+    // Only fetch applications that have NOT been Approved or Rejected yet
     const sql = `SELECT applications.*, pets.name AS petName, users.username AS applicantName, users.email AS applicantEmail
                  FROM applications
                  JOIN pets ON applications.petId = pets.id
                  JOIN users ON applications.userId = users.id
-                 ORDER BY applications.updatedAt DESC`;
+                 WHERE applications.stage NOT IN ('Approved', 'Rejected')
+                 ORDER BY applications.createdAt DESC`;
+                 
     db.query(sql, (err, results) => {
         if (err) throw err;
         res.render('applications', {
-            applications: results, user: req.session.user,
-            messages: req.flash('success'), errors: req.flash('error')
+            applications: results, 
+            user: req.session.user,
+            messages: req.flash('success'), 
+            errors: req.flash('error')
         });
     });
 });
@@ -702,6 +707,26 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
                 saveAndRedirect(req, res, '/applications');
             });
         });
+});
+
+// [Admin] View history of approved and rejected applications
+app.get('/applications/history', checkAuthenticated, checkAdmin, (req, res) => {
+    const sql = `SELECT applications.*, pets.name AS petName, users.username AS applicantName, users.email AS applicantEmail
+                 FROM applications
+                 JOIN pets ON applications.petId = pets.id
+                 JOIN users ON applications.userId = users.id
+                 WHERE applications.stage IN ('Approved', 'Rejected')
+                 ORDER BY applications.updatedAt DESC`;
+
+    db.query(sql, (err, results) => {
+        if (err) throw err;
+        res.render('applicationHistory', {
+            applications: results,
+            user: req.session.user,
+            messages: req.flash('success'),
+            errors: req.flash('error')
+        });
+    });
 });
 
 // [Enhancement] View my notifications - opening the page marks them all as read
