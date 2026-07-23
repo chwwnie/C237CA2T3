@@ -111,7 +111,7 @@ app.use((req, res, next) => {
 });
 
 // ==================== MIDDLEWARE ====================
-// [Student A] Middleware to check if user is logged in
+// [Elston] Middleware to check if user is logged in
 const checkAuthenticated = (req, res, next) => {
     if (req.session.user) {
         return next();
@@ -121,7 +121,7 @@ const checkAuthenticated = (req, res, next) => {
     }
 };
 
-// [Student A] Middleware to check if user is admin
+// [Elston] Middleware to check if user is admin
 const checkAdmin = (req, res, next) => {
     if (req.session.user && req.session.user.role === 'admin') {
         return next();
@@ -131,7 +131,7 @@ const checkAdmin = (req, res, next) => {
     }
 };
 
-// [Student A] Middleware for registration form validation
+// [Elston] Middleware for registration form validation
 const validateRegistration = (req, res, next) => {
     // trim so " bob@x.com" and "bob@x.com" aren't treated as different accounts
     req.body.username = (req.body.username || '').trim();
@@ -159,7 +159,7 @@ const validateRegistration = (req, res, next) => {
     next();
 };
 
-// ==================== STUDENT A: REGISTRATION, LOGIN, LOGOUT ====================
+// ==================== ELSTON: REGISTRATION, LOGIN, LOGOUT ====================
 
 app.get('/', (req, res) => {
     res.render('index', { user: req.session.user });
@@ -231,7 +231,7 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// [Student A] Personalisation feature: users manage their own account info
+// [Elston] Personalisation feature: users manage their own account info
 app.get('/profile', checkAuthenticated, (req, res) => {
     res.render('profile', {
         user: req.session.user,
@@ -308,8 +308,8 @@ app.get('/images/pet/:id', (req, res) => {
     });
 });
 
-// ==================== STUDENT C: VIEWING / DISPLAYING PETS ====================
-// (Search & filter logic marked [Student F] lives inside the same route,
+// ==================== ANGELINA : VIEWING / DISPLAYING PETS ====================
+// (Search & filter logic marked [SARAVANA] lives inside the same route,
 //  since the pet list and its filters share one query)
 
 app.get('/pets', checkAuthenticated, (req, res) => {
@@ -318,22 +318,22 @@ app.get('/pets', checkAuthenticated, (req, res) => {
     let sql = 'SELECT * FROM pets WHERE 1=1';
     const params = [];
 
-    // [Student F] Search by name or breed
+    // [SARAVANA] Search by name or breed
     if (q) {
         sql += ' AND (name LIKE ? OR breed LIKE ?)';
         params.push(`%${q}%`, `%${q}%`);
     }
-    // [Student F] Filter by species
+    // [SARAVANA] Filter by species
     if (species) {
         sql += ' AND species = ?';
         params.push(species);
     }
-    // [Student F] Filter by age group
+    // [SARAVANA] Filter by age group
     if (ageGroup) {
         sql += ' AND ageGroup = ?';
         params.push(ageGroup);
     }
-    // [Student F] Filter by adoption status
+    // [SARAVANA] Filter by adoption status
     if (status) {
         sql += ' AND adoptionStatus = ?';
         params.push(status);
@@ -343,11 +343,11 @@ app.get('/pets', checkAuthenticated, (req, res) => {
         // An explicit status filter (e.g. an admin reviewing "Adopted") still works.
         sql += " AND adoptionStatus NOT IN ('Archived', 'Adopted')";
     }
-    // [Student F] Filter by good with kids
+    // [SARAVANA] Filter by good with kids
     if (goodWithKids === 'true') {
         sql += ' AND friendlyWithKids = 1';
     }
-    // [Student F] Sorting
+    // [SARAVANA] Sorting
     if (sort === 'name') {
         sql += ' ORDER BY name ASC';
     } else if (sort === 'age') {
@@ -391,7 +391,7 @@ app.get('/pets/:id', checkAuthenticated, (req, res) => {
     });
 });
 
-// ==================== STUDENT B: ADDING NEW PETS ====================
+// ==================== ANGELINA: ADDING NEW PETS ====================
 
 app.get('/addPet', checkAuthenticated, checkAdmin, (req, res) => {
     res.render('addPet', { user: req.session.user, messages: req.flash('success'), errors: req.flash('error') });
@@ -441,7 +441,7 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
     });
 });
 
-// ==================== STUDENT D: EDITING EXISTING PETS ====================
+// ==================== SHOYAL: EDITING EXISTING PETS ====================
 
 app.get('/editPet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     const petId = req.params.id;
@@ -503,7 +503,7 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     });
 });
 
-// ==================== STUDENT E: REMOVING PETS + FAVOURITES ====================
+// ==================== SHOYAL: REMOVING PETS + FAVOURITES ====================
 
 app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     const petId = req.params.id;
@@ -520,7 +520,7 @@ app.get('/deletePet/:id', checkAuthenticated, checkAdmin, (req, res) => {
     });
 });
 
-// [Student E] Personalisation feature: users favourite/unfavourite pets
+// [SHOYAL] Personalisation feature: users favourite/unfavourite pets
 app.post('/pets/:id/favourite', checkAuthenticated, (req, res) => {
     const petId = req.params.id;
     const userId = req.session.user.id;
@@ -555,7 +555,7 @@ app.get('/favourites', checkAuthenticated, (req, res) => {
     });
 });
 
-// ==================== STUDENT F: ADOPTION APPLICATIONS ====================
+// ==================== JABRIEL: ADOPTION APPLICATIONS ====================
 
 app.get('/apply/:petId', checkAuthenticated, (req, res) => {
     const petId = req.params.petId;
@@ -648,7 +648,7 @@ app.post('/my-applications/:id/withdraw', checkAuthenticated, (req, res) => {
     );
 });
 
-// [Student F / Admin] View and manage all applications
+// [JABRIEL / Admin] View and manage all applications
 app.get('/applications', checkAuthenticated, checkAdmin, (req, res) => {
     // Only fetch applications that have NOT been Approved or Rejected yet
     const sql = `SELECT applications.*, pets.name AS petName, users.username AS applicantName, users.email AS applicantEmail
