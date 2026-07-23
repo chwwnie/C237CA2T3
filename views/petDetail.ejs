@@ -1,101 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="/css/style.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <title>
-    <%= pet.name %> - Pet Shelter Portal
-  </title>
+  <title><%= pet.name %> - Pet Shelter Portal</title>
 </head>
-
 <body>
   <%- include('header') %>
 
-  <div class="container mt-4">
-    <% if (typeof errors !=='undefined' && errors && errors.length> 0) { %>
+  <div class="container mt-4" style="max-width: 1000px;">
+    <% if (typeof errors !== 'undefined' && errors && errors.length > 0) { %>
       <div class="alert alert-danger">
-        <% errors.forEach(function(e) { %>
-          <p class="mb-0">
-            <%= e %>
-          </p>
-          <% }); %>
+        <% errors.forEach(function(e) { %><p class="mb-0"><%= e %></p><% }); %>
       </div>
-      <% } %>
-        <% if (typeof messages !=='undefined' && messages && messages.length> 0) { %>
-          <div class="alert alert-success">
-            <% messages.forEach(function(m) { %>
-              <p class="mb-0">
-                <%= m %>
-              </p>
-              <% }); %>
-          </div>
-          <% } %>
-            <div class="row">
-              <div class="col-md-5">
-                <img src="/images/pet/<%= pet.id %>" class="card-img-top"
-                  style="height:500px; object-fit:cover;" alt="<%= pet.name %>">
+    <% } %>
+    <% if (typeof messages !== 'undefined' && messages && messages.length > 0) { %>
+      <div class="alert alert-success">
+        <% messages.forEach(function(m) { %><p class="mb-0"><%= m %></p><% }); %>
+      </div>
+    <% } %>
 
-              </div>
-              <div class="col-md-7">
-                <h1>
-                  <%= pet.name %> <span class="badge <%= 
-                      pet.adoptionStatus === 'Available' ? 'bg-success' : 
-                      pet.adoptionStatus === 'Pending' ? 'bg-warning text-dark' : 
-                      pet.adoptionStatus === 'Adopted' ? 'bg-danger' : 
-                      pet.adoptionStatus === 'Medical Hold' ? 'bg-info text-dark' : 
-                      'bg-secondary' 
-                    %>">
-                      <%= pet.adoptionStatus %>
-                    </span>
-                </h1>
-                <p class="text-muted">
-                  <%= pet.breed %> &middot; <%= pet.species %> &middot; <%= pet.ageGroup %> (<%= pet.ageMonths %>
-                          months)
-                          &middot; <%= pet.gender %>
-                </p>
-                <p>
-                  <%= pet.description %>
-                </p>
-
-                <ul class="list-group list-group-flush mb-3">
-                  <li class="list-group-item">Personality: <%= pet.personality %>
-                  </li>
-                  <li class="list-group-item">Weight: <%= pet.weightLbs %> lbs</li>
-                  <li class="list-group-item">Vaccination Status: <%= pet.vaccinationStatus %>
-                  </li>
-                  <li class="list-group-item">Medical History: <%= pet.medicalHistory %>
-                  </li>
-                  <li class="list-group-item">Shelter Location: <%= pet.shelterLocation %> (<%= pet.kennelCode %>)</li>
-                  <li class="list-group-item">
-                    Good with:
-                    <br>
-                    <%= [ pet.friendlyWithPeople ? 'People' : null, pet.friendlyWithKids ? 'Kids' : null,
-                      pet.friendlyWithDogs ? 'Dogs' : null, pet.friendlyWithCats ? 'Cats' : null,
-                      pet.friendlyWithOtherPets ? 'Other Pets' : null ].filter(Boolean).join(', ') || ' Not specified'
-                      %>
-                </ul>
-
-                <form action="/pets/<%= pet.id %>/favourite" method="POST" class="d-inline">
-                  <button type="submit" class="btn btn-outline-danger">
-                    <%= isFavourite ? 'Remove from Favourites' : 'Add to Favourites' %>
-                  </button>
-                </form>
-
-                <% if (pet.adoptionStatus==='Available' ) { %>
-                  <a href="/apply/<%= pet.id %>" class="btn btn-primary">Apply to Adopt</a>
-                  <% } %>
-
-                    <% if (user.role==='admin' ) { %>
-                      <a href="/editPet/<%= pet.id %>" class="btn btn-secondary">Edit</a>
-                      <a href="/deletePet/<%= pet.id %>" class="btn btn-danger"
-                        onclick="return confirm('Are you sure you want to remove this pet?')">Delete</a>
-                      <% } %>
-              </div>
+    <div class="card">
+      <div class="row g-0">
+        <div class="col-md-5">
+          <img src="/images/pet/<%= pet.id %>" class="w-100 h-100"
+            style="object-fit: cover; border-radius: var(--radius) 0 0 var(--radius); min-height: 420px;" alt="<%= pet.name %>">
+        </div>
+        <div class="col-md-7">
+          <div class="card-body p-4 p-md-5">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <h1 class="mb-0 h2"><%= pet.name %></h1>
+              <span class="badge <%=
+                  pet.adoptionStatus === 'Available' ? 'bg-success' :
+                  pet.adoptionStatus === 'Pending' ? 'bg-warning text-dark' :
+                  pet.adoptionStatus === 'Adopted' ? 'bg-danger' :
+                  pet.adoptionStatus === 'Medical Hold' ? 'bg-info text-dark' :
+                  'bg-secondary'
+                %>"><%= pet.adoptionStatus %></span>
             </div>
+            <p class="text-muted mb-3">
+              <%= pet.breed %> &middot; <%= pet.species %> &middot; <%= pet.ageGroup %> (<%= pet.ageMonths %> months) &middot; <%= pet.gender %>
+            </p>
+            <p class="mb-4"><%= pet.description %></p>
+
+            <ul class="list-group list-group-flush mb-4">
+              <li class="list-group-item px-0"><strong>Personality:</strong> <%= pet.personality %></li>
+              <li class="list-group-item px-0"><strong>Weight:</strong> <%= pet.weightLbs %> lbs</li>
+              <li class="list-group-item px-0"><strong>Vaccination Status:</strong> <%= pet.vaccinationStatus %></li>
+              <li class="list-group-item px-0"><strong>Medical History:</strong> <%= pet.medicalHistory %></li>
+              <li class="list-group-item px-0"><strong>Shelter Location:</strong> <%= pet.shelterLocation %> (<%= pet.kennelCode %>)</li>
+              <li class="list-group-item px-0">
+                <strong>Good with:</strong>
+                <%= [
+                  pet.friendlyWithPeople ? 'People' : null,
+                  pet.friendlyWithKids ? 'Kids' : null,
+                  pet.friendlyWithDogs ? 'Dogs' : null,
+                  pet.friendlyWithCats ? 'Cats' : null,
+                  pet.friendlyWithOtherPets ? 'Other Pets' : null
+                ].filter(Boolean).join(', ') || 'Not specified' %>
+              </li>
+            </ul>
+
+            <div class="d-flex flex-wrap gap-2">
+              <form action="/pets/<%= pet.id %>/favourite" method="POST" class="d-inline">
+                <button type="submit" class="btn btn-outline-danger">
+                  <%= isFavourite ? '💔 Remove from Favourites' : '❤️ Add to Favourites' %>
+                </button>
+              </form>
+
+              <% if (pet.adoptionStatus === 'Available') { %>
+                <a href="/apply/<%= pet.id %>" class="btn btn-primary">Apply to Adopt</a>
+              <% } %>
+
+              <% if (user.role === 'admin') { %>
+                <a href="/editPet/<%= pet.id %>" class="btn btn-secondary">Edit</a>
+                <a href="/deletePet/<%= pet.id %>" class="btn btn-danger"
+                  onclick="return confirm('Are you sure you want to remove this pet?')">Delete</a>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </body>
-
 </html>
