@@ -11,10 +11,11 @@
   <%- include('header') %>
 
   <div class="container mt-5 text-center">
+    <img src="/images/index_image.jpg" class="img-fluid mb-4" alt="Pet Shelter">
     <h1>Welcome to the Pet Shelter Portal</h1>
     <p class="lead">Find your new best friend and help give a rescued pet a loving home.</p>
     <% if (user) { %>
-      <a href="/pets" class="btn btn-primary btn-lg">Browse Pets</a>
+      <a href="/pets" class="btn btn-primary btn-lg">Start Browsing Pets</a>
     <% } else { %>
       <a href="/login" class="btn btn-primary btn-lg">Login to Get Started</a>
     <% } %>
