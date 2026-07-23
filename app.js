@@ -694,7 +694,7 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
 
                 // [Enhancement] Notify the applicant of the decision
                 const message = stage === 'Approved'
-                    ? `Great news! Your application for ${petName} has been approved.`
+                    ? `Great news! Your application for ${petName} has been approved. Please contact the shelter to arrange the next steps.`
                     : `Your application for ${petName} was not approved this time.`;
                 db.query('INSERT INTO notifications (userId, message) VALUES (?, ?)', [userId, message]);
 
