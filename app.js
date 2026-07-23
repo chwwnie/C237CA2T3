@@ -688,9 +688,10 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
 
                 // Approving finalises the adoption immediately - the pet is Adopted
                 // right away and drops out of the default browse list for other users.
-                if (stage === 'Approved') {
-                    db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?', ['Adopted', petId]);
-                }
+                // Rejecting frees the pet back up as Available, so it's visible in
+                // Browse Pets again instead of staying stuck on whatever status it had.
+                db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
+                    [stage === 'Approved' ? 'Adopted' : 'Available', petId]);
 
                 // [Enhancement] Notify the applicant of the decision
                 const message = stage === 'Approved'
