@@ -95,9 +95,8 @@ const saveAndRedirect = (req, res, url) => {
     });
 };
 
-// [Enhancement] Make the unread notification count available to every view
-// (res.locals is auto-available in EJS templates without passing it manually),
-// so the notification bell badge can show up in the navbar on any page.
+// [Enhancement] Count this user's unread notifications on every page load,
+// so the bell icon in the navbar can show the correct badge number anywhere.
 app.use((req, res, next) => {
     if (!req.session.user) {
         res.locals.unreadCount = 0;
@@ -411,6 +410,10 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
     const friendlyWithOtherPets = req.body.friendlyWithOtherPets ? 1 : 0;
     const specialNeeds = req.body.specialNeeds ? 1 : 0;
     const healthy = req.body.healthy ? 1 : 0;
+    // Rescue Date is an optional field - if left blank, the browser sends an
+    // empty string, but the rescueDate column is a DATE type and MySQL
+    // rejects '' as an invalid date. Convert blank to null so it saves as "no date set".
+    const rescueDateValue = rescueDate ? rescueDate : null;
     // The photo's original filename is kept only as display metadata - the
     // actual image bytes go into imageData so they're stored in the database
     // instead of on disk (see the multer.memoryStorage() comment above).
@@ -427,7 +430,7 @@ app.post('/addPet', checkAuthenticated, checkAdmin, upload.single('image'), (req
 
     db.query(sql, [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
-        medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus || 'Available',
+        medicalHistory, vaccinationStatus, rescueDateValue, shelterLocation, kennelCode, adoptionStatus || 'Available',
         friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy,
         image, imageData, imageMimeType
     ], (err, result) => {
@@ -472,6 +475,9 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
     const friendlyWithOtherPets = req.body.friendlyWithOtherPets ? 1 : 0;
     const specialNeeds = req.body.specialNeeds ? 1 : 0;
     const healthy = req.body.healthy ? 1 : 0;
+    // Rescue Date is optional - blank means an empty string, which MySQL
+    // rejects for a DATE column, so convert it to null instead.
+    const rescueDateValue = rescueDate ? rescueDate : null;
 
     let sql = `UPDATE pets SET
         name=?, species=?, breed=?, ageMonths=?, ageGroup=?, gender=?, weightLbs=?, personality=?, description=?,
@@ -479,7 +485,7 @@ app.post('/editPet/:id', checkAuthenticated, checkAdmin, upload.single('image'),
         friendlyWithPeople=?, friendlyWithKids=?, friendlyWithDogs=?, friendlyWithCats=?, friendlyWithOtherPets=?, specialNeeds=?, healthy=?`;
     const params = [
         name, species, breed, ageMonths, ageGroup, gender, weightLbs, personality, description,
-        medicalHistory, vaccinationStatus, rescueDate, shelterLocation, kennelCode, adoptionStatus,
+        medicalHistory, vaccinationStatus, rescueDateValue, shelterLocation, kennelCode, adoptionStatus,
         friendlyWithPeople, friendlyWithKids, friendlyWithDogs, friendlyWithCats, friendlyWithOtherPets, specialNeeds, healthy
     ];
 
@@ -698,7 +704,8 @@ app.post('/applications/:id/stage', checkAuthenticated, checkAdmin, (req, res) =
                 db.query('UPDATE pets SET adoptionStatus = ? WHERE id = ?',
                     [stage === 'Approved' ? 'Adopted' : 'Available', petId]);
 
-                // [Enhancement] Notify the applicant of the decision
+                // [Enhancement] Send the applicant a notification about the decision
+                // (this is inserted for the user who applied, not the admin clicking here)
                 const message = stage === 'Approved'
                     ? `Great news! Your application for ${petName} has been approved. Please contact the shelter to arrange the next steps.`
                     : `Your application for ${petName} was not approved this time.`;
