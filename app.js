@@ -71,6 +71,23 @@ app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: false }));
 
+// [Q&A] "If the page refreshes, why don't users have to log in again?"
+// When login succeeds, express-session gives the browser a cookie holding a
+// session ID (the actual user data stays server-side, in the `sessions`
+// table). The browser sends that cookie back automatically on every request,
+// including refreshes - so the server looks up the session ID, finds
+// req.session.user still set, and treats the user as still logged in.
+// No cookie = no session ID = the server has no idea who you are, which is
+// why logging out (session.destroy) or clearing cookies forces a fresh login.
+// cookie.maxAge below controls how long that cookie stays valid before it
+// expires on its own (currently 1 week).
+// [Q&A] "How would you improve this?" - two real options:
+//   1. Add `rolling: true` here, so every request resets the maxAge timer
+//      back to a full week instead of counting down from the login moment -
+//      an active user would never get logged out mid-use.
+//   2. Add a "Remember me" checkbox on the login form and set a shorter
+//      maxAge (e.g. browser-session-only) when it's unchecked, so a shared
+//      computer doesn't stay logged in for a full week by default.
 app.use(session({
     secret: 'secret',
     resave: false,
@@ -145,6 +162,11 @@ const validateRegistration = (req, res, next) => {
         req.flash('formData', req.body);
         return saveAndRedirect(req, res, '/register');
     }
+    // [Q&A] "What's the minimum password length?" - 6 characters, checked here
+    // in JavaScript before the INSERT even runs (there's no length rule on the
+    // database column itself - password is stored as a fixed-length SHA1 hash
+    // either way, so the database can't tell a 2-character password from a
+    // 20-character one; the length check has to happen before hashing).
     if (password.length < 6) {
         req.flash('error', 'Password should be at least 6 or more characters long');
         req.flash('formData', req.body);
@@ -164,21 +186,40 @@ app.get('/', (req, res) => {
     res.render('index', { user: req.session.user });
 });
 
+// GET - just displays the empty registration form (or re-displays it with
+// an error + whatever was typed, if validateRegistration bounced it back).
 app.get('/register', (req, res) => {
     res.render('register', { messages: req.flash('error'), formData: req.flash('formData')[0] });
 });
 
+// POST - runs after the form above is submitted: receives the typed-in
+// fields in req.body, validates them (validateRegistration middleware runs
+// first), then creates the account.
 app.post('/register', validateRegistration, (req, res) => {
     const { username, email, password, phone, address } = req.body;
     // Every self-registered account is a regular user. To create an admin
     // account, promote an existing user directly in MySQL:
     //   UPDATE users SET role = 'admin' WHERE email = '...';
+    //
+    // [Q&A] Note: only EMAIL is protected against duplicates (it's declared
+    // UNIQUE in database.sql). Username is NOT unique in this schema - two
+    // people could register with the same username and both accounts would
+    // be created fine, since the database only rejects a duplicate email.
 
     const sql = 'INSERT INTO users (username, email, password, phone, address, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
     db.query(sql, [username, email, password, phone, address, 'user'], (err, result) => {
         if (err) {
-            // email is UNIQUE in the schema - handle that case gracefully instead
-            // of crashing the whole server on a duplicate registration attempt
+            // [Q&A] "What happens on a duplicate email/username?"
+            // The `email` column is declared UNIQUE in database.sql (see
+            // "email VARCHAR(190) NOT NULL UNIQUE"), so MySQL itself rejects a
+            // second INSERT with an email that already exists - it never even
+            // gets checked in JavaScript first. That failed INSERT comes back
+            // here as err.code === 'ER_DUP_ENTRY'. Without this check, that
+            // error would be unhandled and crash the whole server (see the
+            // `throw err;` below, which is what runs for any OTHER database
+            // error) - so this catches that one specific case and shows a
+            // friendly flash message instead, keeping the typed form data so
+            // the user doesn't have to retype everything.
             if (err.code === 'ER_DUP_ENTRY') {
                 req.flash('error', 'That email is already registered. Try logging in instead.');
                 req.flash('formData', req.body);
@@ -191,6 +232,7 @@ app.post('/register', validateRegistration, (req, res) => {
     });
 });
 
+// GET - just displays the empty login form.
 app.get('/login', (req, res) => {
     res.render('login', {
         messages: req.flash('success'),
@@ -198,12 +240,21 @@ app.get('/login', (req, res) => {
     });
 });
 
+// POST - runs when the login form is submitted. Checks the typed email +
+// password against the users table, and if they match, saves the user's
+// info into req.session.user - that's the one line that actually "logs
+// someone in"; everything else (checkAuthenticated, the navbar, etc.) just
+// checks whether req.session.user exists.
 app.post('/login', (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
         req.flash('error', 'All fields are required.');
         return saveAndRedirect(req, res, '/login');
     }
+    // SHA1(?) hashes the typed password the same way it was hashed at
+    // registration, so this comparison happens entirely inside MySQL - the
+    // real plaintext password is never checked against a stored value in
+    // JavaScript, and a non-match simply returns zero rows.
     const sql = 'SELECT * FROM users WHERE email = ? AND password = SHA1(?)';
     db.query(sql, [email, password], (err, results) => {
         if (err) {
@@ -220,6 +271,10 @@ app.post('/login', (req, res) => {
     });
 });
 
+// GET - logging out just deletes the session row from the database (there's
+// no form to submit, so a simple link/GET request is enough). Once the
+// session is gone, req.session.user is gone too, so checkAuthenticated will
+// reject the next protected page request until they log in again.
 app.get('/logout', (req, res) => {
     // Wait for the session to actually be removed from the store before
     // redirecting, for the same reason saveAndRedirect exists above - otherwise
@@ -230,7 +285,14 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// [Elston] Personalisation feature: users manage their own account info
+// ==================== PROFILE (personalisation - users manage their own account) ====================
+// Two separate forms live on the /profile page, so there are two separate
+// POST routes: one for username/phone/address ("/profile"), and one for
+// changing the password ("/profile/password"). Splitting them means a
+// mistake in one form can't accidentally touch the other's data.
+
+// GET - loads the profile page pre-filled with the logged-in user's current
+// details (checkAuthenticated blocks this route if nobody's logged in).
 app.get('/profile', checkAuthenticated, (req, res) => {
     res.render('profile', {
         user: req.session.user,
@@ -239,6 +301,9 @@ app.get('/profile', checkAuthenticated, (req, res) => {
     });
 });
 
+// POST - saves changes to username/phone/address. Email is deliberately left
+// out of this form/query - it's the account's unique identifier (and how you
+// log in), so changing it here isn't offered as a feature.
 app.post('/profile', checkAuthenticated, (req, res) => {
     const username = (req.body.username || '').trim();
     const phone = (req.body.phone || '').trim();
@@ -252,7 +317,11 @@ app.post('/profile', checkAuthenticated, (req, res) => {
     const sql = 'UPDATE users SET username = ?, phone = ?, address = ? WHERE id = ?';
     db.query(sql, [username, phone, address, req.session.user.id], (err) => {
         if (err) throw err;
-        // keep the session in sync so the navbar/welcome text reflects the change immediately
+        // req.session.user is just a snapshot of the users row taken back at
+        // login - updating the database alone wouldn't change it. Without
+        // these three lines, the navbar/welcome text would keep showing the
+        // OLD username until the next login, even though the database is
+        // already correct. Manually updating the session here keeps them in sync.
         req.session.user.username = username;
         req.session.user.phone = phone;
         req.session.user.address = address;
@@ -261,6 +330,9 @@ app.post('/profile', checkAuthenticated, (req, res) => {
     });
 });
 
+// POST - changes the password. This is a separate route/form from the one
+// above so that submitting "just update my phone number" can never
+// accidentally also touch the password field.
 app.post('/profile/password', checkAuthenticated, (req, res) => {
     const { currentPassword, newPassword, confirmNewPassword } = req.body;
 
@@ -268,6 +340,9 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
         req.flash('error', 'All password fields are required.');
         return saveAndRedirect(req, res, '/profile');
     }
+    // [Q&A] Same minimum-length rule as registration (6 characters) - kept
+    // consistent so there's one password policy across the whole app, not a
+    // different rule depending on which form you're using.
     if (newPassword.length < 6) {
         req.flash('error', 'New password should be at least 6 or more characters long.');
         return saveAndRedirect(req, res, '/profile');
@@ -277,7 +352,12 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
         return saveAndRedirect(req, res, '/profile');
     }
 
-    // verify current password is correct before allowing the change
+    // [Q&A] "How do you change a password safely?" - re-check the CURRENT
+    // password against the database first, the same SHA1(?) way login does.
+    // Without this step, anyone who walks up to an already-logged-in,
+    // unlocked session (e.g. a shared computer) could silently change the
+    // password and lock the real owner out. Requiring the current password
+    // again proves it's genuinely the account owner making the change.
     const checkSql = 'SELECT id FROM users WHERE id = ? AND password = SHA1(?)';
     db.query(checkSql, [req.session.user.id, currentPassword], (err, results) => {
         if (err) throw err;
@@ -285,6 +365,7 @@ app.post('/profile/password', checkAuthenticated, (req, res) => {
             req.flash('error', 'Current password is incorrect.');
             return saveAndRedirect(req, res, '/profile');
         }
+        // Current password confirmed correct - now hash and store the new one.
         const updateSql = 'UPDATE users SET password = SHA1(?) WHERE id = ?';
         db.query(updateSql, [newPassword, req.session.user.id], (err) => {
             if (err) throw err;
